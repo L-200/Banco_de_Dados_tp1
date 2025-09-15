@@ -15,7 +15,7 @@ WORKDIR /app
 #copia e instala apenas as dependencias para aproveitar o cache do docker e evitar reinstalações desnecessárias caso ocorra mudanças no código
 COPY requirements.txt .
 #--no-cache-dir evita que o pip armazene em cache os pacotes baixados, economiza tamanho da imagem
-#NOTA: esse --no-cache é um cache diferente do cache do docker, o docker reutilizará camadas antigas do SEU cache se ocorrer alterações, mas o  cache do pip não será armazenado
+#NOTA: esse --no-cache é um cache diferente do cache do docker, o docker reutilizará camadas antigas do SEU cache se ocorrer alterações, mas o cache do pip não será armazenado
 RUN pip install --no-cache-dir -r requirements.txt
 
 

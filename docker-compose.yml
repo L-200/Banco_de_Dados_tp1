@@ -1,6 +1,3 @@
-#define a versão do docker-compose
-version: '3.8'
- 
 services:
   # serviço do banco de dados
   db:
@@ -53,8 +50,8 @@ services:
     volumes:
       - ./data:/data:ro #permissão de leitura do data do diretorio host para o container atraves de um "atalho"
     
-    #comando para rodar o script python
-    command: python src/tp1_3.2.py
+    #comando para rodar o script python em um modulo para ele conseguir encontrar o src
+    command: python -m src.tp1_3.2
 
     networks:
       - app-network
