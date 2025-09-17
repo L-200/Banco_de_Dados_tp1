@@ -5,10 +5,10 @@ DROP TABLE IF EXISTS Reviews CASCADE;
 DROP TABLE IF EXISTS Products CASCADE;
 DROP TABLE IF EXISTS Categories CASCADE;
 DROP TABLE IF EXISTS Customers CASCADE;
-DROP TABLE IF EXISTS Groups CASCADE;
+DROP TABLE IF EXISTS Product_groups CASCADE;
 
 --tabela que guarda os groups
-CREATE TABLE Groups (
+CREATE TABLE Product_groups (
     group_id   SERIAL,          
     group_name TEXT NOT NULL UNIQUE,
 
@@ -34,9 +34,9 @@ CREATE TABLE Categories (
 
 --tabela que guarda os produtos
 CREATE TABLE Products (
-    source_id INT UNIQUE,
+    source_id INT UNIQUE, --os 3 tem que ser unic para podermos pesquisar com os 3
     asin VARCHAR(20),
-    titulo TEXT NOT NULL, 
+    titulo TEXT NOT NULL UNIQUE, 
     group_id INT NOT NULL,
     salesrank INT,
     total_reviews INT DEFAULT 0,
