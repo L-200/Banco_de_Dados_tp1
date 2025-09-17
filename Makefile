@@ -1,3 +1,6 @@
+# ?= define uma variável de ambiente ASIN com esse valor por padrão
+ASIN ?= "DEFAULT_ASIN_CHANGE_ME"
+
 #indica que esses alvos não correspondem a arquivos e sim a apelidos de comandos
 .PHONY: help up down etl dashboard logs shell clean
 
@@ -8,7 +11,7 @@ help:
 	@echo "  make up     -> Constrói as imagens e inicia todos os serviços em background."
 	@echo "  make down   -> Para e remove os contêineres e redes."
 	@echo "  make etl    -> Executa o script de ETL em um contêiner temporário."
-	@echo "  make dashboard  -> Executa o script de CONSULTAS DO DASHBOARD (tp1_3.3.py)."
+	@echo "  make dashboard ASIN=<ASIN>  -> Executa as consultas para um ASIN específico."
 	@echo "  make logs   -> Exibe os logs do serviço da aplicação em tempo real."
 	@echo "  make shell  -> Abre um terminal (shell) dentro do contêiner da aplicação."
 	@echo "  make clean  -> Para tudo e remove também os volumes (APAGA OS DADOS DO BANCO)."
@@ -30,8 +33,11 @@ etl:
 # Executa o script de consultas do dashboard como um comando unico em um conteiner que será removido no final.
 # Corresponde ao 'docker compose run 3.3
 dashboard:
-	docker compose run --rm app python src/tp1_3.3.py --db-host db --db-port 5432 --db-name ecommerce --db-user postgres --db-pass postgres --output /app/out
-
+	docker compose run --rm app python src/tp1_3.3.py \
+		...
+		--product-asin $(ASIN) \
+		--output /app/out
+		
 # Mostra os logs do serviço 'app' e continua exibindo em tempo real (-f).
 logs:
 	docker compose logs -f app
