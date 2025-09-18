@@ -36,7 +36,11 @@ etl:
 # Passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
 dashboard:
 	docker compose run --rm app python src/tp1_3.3.py \
-		--db-host db --db-port 5432 --db-name ecommerce --db-user postgres --db-pass postgres \
+		--db-host $(DB_HOST) \
+		--db-port $(DB_PORT) \
+		--db-name $(DB_NAME) \
+		--db-user $(DB_USER) \
+		--db-pass $(DB_PASS) \
 		--product-asin $(ASIN) \
 		--output /app/out
 

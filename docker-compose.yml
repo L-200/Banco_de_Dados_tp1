@@ -5,6 +5,12 @@ services:
     image: postgres:15-alpine
     container_name: tp1_db
 
+     #variaveis não utilizadas no codigo devido ao makefile passar elas diretamente como especificado na seção 4.1 do trabalho
+    environment: 
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ecommerce
+
     #volume para persistência dos dados
     volumes:
       - postgres_data:/var/lib/postgresql/data
