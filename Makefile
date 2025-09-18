@@ -25,19 +25,21 @@ up:
 down:
 	docker compose down
 
-# Executa o script de ETL como um comando unico em um conteiner que será removido no final.
-# Corresponde ao 'docker compose run 3.2'
+# executa o script de etl como um comando unico em um conteiner que será removido no final
+# corresponde ao 'docker compose run 3.2'
+#passa as variaveis de conexão com o banco e o caminho do arquivo de dados como especificado na seção 4.1 do trabalho
 etl:
 	docker compose run --rm -e PYTHONPATH=/app app python src/tp1_3.2.py --db-host db --db-port 5432 --db-name ecommerce --db-user postgres --db-pass postgres --input /data/snap_amazon.txt
 
 # Executa o script de consultas do dashboard como um comando unico em um conteiner que será removido no final.
-# Corresponde ao 'docker compose run 3.3
+# Corresponde ao 'docker compose run 3.3'
+# Passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
 dashboard:
 	docker compose run --rm app python src/tp1_3.3.py \
-		...
+		--db-host db --db-port 5432 --db-name ecommerce --db-user postgres --db-pass postgres \
 		--product-asin $(ASIN) \
 		--output /app/out
-		
+
 # Mostra os logs do serviço 'app' e continua exibindo em tempo real (-f).
 logs:
 	docker compose logs -f app

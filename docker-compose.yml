@@ -5,8 +5,8 @@ services:
     image: postgres:15-alpine
     container_name: tp1_db
 
-    #variaveis para configuração do banco
-    environment:
+    #variaveis não utilizadas no codigo devido ao makefile passar elas diretamente como especificado na seção 4.1 do trabalho
+    environment: 
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ecommerce
@@ -51,8 +51,6 @@ services:
       - ./data:/data:ro #permissão de leitura do data do diretorio host para o container atraves de um "atalho"
       - ./out:/app/out         # saída dos relatórios/CSVs
     
-    #comando para rodar o script python em um modulo para ele conseguir encontrar o src
-
     networks:
       - app-network
 
