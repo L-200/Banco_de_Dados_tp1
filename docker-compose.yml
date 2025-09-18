@@ -40,13 +40,6 @@ services:
       db:
         condition: service_healthy
 
-    environment:
-      DB_HOST: db
-      #mesmas variáveis de db
-      DB_NAME: ecommerce
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-
     volumes:
       - ./data:/data:ro #permissão de leitura do data do diretorio host para o container atraves de um "atalho"
       - ./out:/app/out         # saída dos relatórios/CSVs
