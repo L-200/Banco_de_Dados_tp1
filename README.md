@@ -69,3 +69,5 @@ docker compose run --rm app python src/tp1_3.3.py \
   --<product-asin, product-title ou product-id> <valor para identificar o item>\
   --output /app/out
 ``` 
+
+Em caso de dúvida utilize o make help.
