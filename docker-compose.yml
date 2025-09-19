@@ -40,6 +40,9 @@ services:
       db:
         condition: service_healthy
 
+    environment:
+      - PYTHONPATH=/app
+
     volumes:
       - ./data:/data:ro #permissão de leitura do data do diretorio host para o container atraves de um "atalho"
       - ./out:/app/out         # saída dos relatórios/CSVs
