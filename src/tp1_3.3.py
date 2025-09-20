@@ -156,22 +156,50 @@ def query5(conn):
 
 def query6(conn):
     """
-    Lista as 5 categorias com a maior média de avaliações úteis positivas.
+    Lista as 5 categorias com a maior média de avaliações úteis positivas,
+    considerando a hierarquia (subcategorias contam para as categorias "pai").
     """
     with conn.cursor() as cur:
         sql = """
+            WITH RECURSIVE CategoriaCompleta AS (
+                -- Ponto de partida: a categoria direta e o produto
+                SELECT
+                    pc.category_id,
+                    pc.product_asin
+                FROM
+                    Product_category pc
+
+                UNION ALL
+
+                -- Passo recursivo: sobe na hierarquia, mantendo a referência ao produto
+                SELECT
+                    c.parent_id,
+                    cc.product_asin
+                FROM
+                    CategoriaCompleta cc
+                JOIN
+                    Categories c ON cc.category_id = c.category_id
+                WHERE
+                    c.parent_id IS NOT NULL
+            )
+            -- Agora, agregue os resultados
             SELECT
-                c.category_name,
+                cat.category_name,
                 AVG(r.helpful) AS media_avaliacoes_uteis
-            FROM Categories c
-            JOIN Product_category pc ON c.category_id = pc.category_id
-            JOIN reviews r ON pc.product_asin = r.product_asin
-            GROUP BY c.category_name
-            ORDER BY media_avaliacoes_uteis DESC
+            FROM
+                CategoriaCompleta cc
+            JOIN
+                Categories cat ON cc.category_id = cat.category_id
+            JOIN
+                Reviews r ON cc.product_asin = r.product_asin
+            GROUP BY
+                cat.category_name
+            ORDER BY
+                media_avaliacoes_uteis DESC
             LIMIT 5;
         """
         cur.execute(sql)
-        print_results(cur, "Query 6: Top 5 Categorias com Maior Média de Avaliações Úteis")
+        print_results(cur, "Query 6: Top 5 Categorias com Maior Média de Avaliações Úteis (com Hierarquia)")
 
 def query7(conn):
     """
