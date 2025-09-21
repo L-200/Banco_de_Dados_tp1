@@ -7,7 +7,8 @@ DROP TABLE IF EXISTS Categories CASCADE;
 
 --tabela que guarda as categorias
 CREATE TABLE Categories (
-    category_id INT PRIMARY KEY,
+    category_id SERIAL PRIMARY KEY,
+    category_source_id INT UNIQUE,
     category_name TEXT NOT NULL UNIQUE,
     parent_id INT REFERENCES Categories(category_id) --auto-relacionamento para lidar com a hierarquia de categorias
 
