@@ -11,7 +11,7 @@ TITLE ?=
 ID ?=
 
 #indica que esses alvos não correspondem a arquivos e sim a apelidos de comandos
-.PHONY: help up down etl dashboard logs shell clean
+.PHONY: help up down etl dashboard logs clean
 
 # primeiro alvo a ser executado quando 'make' é chamado sem argumentos
 help:
@@ -21,9 +21,8 @@ help:
 	@echo "  make down   -> Para e remove os contêineres e redes."
 	@echo "  make etl    -> Executa o script de ETL em um contêiner temporário."
 	@echo "  make dashboard <var>=<valor> -> Executa as consultas para um produto específico."
-	@echo "     Use: ASIN=..., TITLE=\"...\" ou ID=..."
+	@echo "     Use: ASIN=..., TITLE=\"...\", ID=... ou só deixe ele vazio se não quiser as querys que dependem de um produto"
 	@echo "  make logs   -> Exibe os logs do serviço da aplicação em tempo real."
-	@echo "  make shell  -> Abre um terminal (shell) dentro do contêiner da aplicação."
 	@echo "  make clean  -> Para tudo e remove também os volumes (APAGA OS DADOS DO BANCO)."
 	@echo ""
 
@@ -51,8 +50,12 @@ etl:
 # Corresponde ao 'docker compose run 3.3'
 # Passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
 #logica if para poder buscar não só pelo asin (como foi dito que seria necessário no discord)
+# Inicializa a variável PRODUCT_ARG vazia para caso nenhuma seja definida
 dashboard:
-	$(eval PRODUCT_ARG := --product-asin $(ASIN))
+	$(eval PRODUCT_ARG :=) 
+	ifdef ASIN
+		$(eval PRODUCT_ARG := --product-asin $(ASIN))
+	endif
 	ifdef TITLE
 		$(eval PRODUCT_ARG := --product-title "$(TITLE)")
 	endif
@@ -67,14 +70,10 @@ dashboard:
 		--db-pass $(DB_PASS) \
 		$(PRODUCT_ARG) \
 		--output /app/out
-		
+
 # Mostra os logs do serviço 'app' e continua exibindo em tempo real (-f).
 logs:
 	docker compose logs -f app
-
-# Executa um shell 'sh' dentro do contêiner do serviço 'app' para depuração.
-shell:
-	docker compose exec app sh
 
 # Comando de limpeza mais agressivo: para os contêineres e remove os volumes de dados.
 # Use com cuidado, pois apaga todos os dados do banco!
