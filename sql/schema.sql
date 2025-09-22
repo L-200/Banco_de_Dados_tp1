@@ -16,9 +16,9 @@ CREATE TABLE Categories (
 
 --tabela que guarda os produtos
 CREATE TABLE Products (
-    source_id INT UNIQUE, --os 3 tem que ser unic para podermos pesquisar com os 3
+    source_id INT UNIQUE, --os 2 tem que ser unic para podermos pesquisar com os 2  
     asin VARCHAR(20) PRIMARY KEY,
-    titulo TEXT NOT NULL UNIQUE, 
+    titulo TEXT, --não pode ser unico pq tem produtos com o mesmo nome
     group_name TEXT,
     salesrank INT,
     total_reviews INT DEFAULT 0,

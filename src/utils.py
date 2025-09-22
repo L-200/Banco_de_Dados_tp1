@@ -1,183 +1,141 @@
 # src/utils.py
 """
-Parsing eficiente do arquivo SNAP (amazon-meta.txt)
+Este módulo contém as funções para analisar (fazer o "parsing") do ficheiro de dados `amazon-meta.txt`, que tem um formato de texto semi-estruturado.
 
-Funções exportadas:
-- extract_all_categories(path) -> dict old_id -> {"name": name, "parent_old_id": parent_old_id}
-    Realiza uma passagem rápida pelo arquivo apenas para coletar todas as categorias (nome + old_id + parent_old_id).
-    Isso permite inserir categorias no banco uma vez, mapear old_id -> new_id e só depois atualizar parent_id.
-
-- parse_snap(path)
-    Iterador (generator) que devolve produto por produto na forma de dicionário:
-    {
-      "id": int,
-      "asin": str,
-      "title": str,
-      "group": str,
-      "salesrank": int or None,
-      "similar": [asin,...],
-      "categories": [ {"old_id": int, "name": str, "parent_old_id": int or None}, ... ],
-      "reviews": [ {"date": date or None, "customer": str, "rating": int, "votes": int, "helpful": int}, ... ]
-    }
-
-Implementações feitas com foco em:
-- robustez de parsing (reviews sem indentação também são reconhecidas),
-- uso de operações leves (regex simples e operações de string),
-- evitando manter em memória coisas desnecessárias em massa (parse_snap é streaming).
+As funções foram desenhadas para serem eficientes em memória e robustas a pequenas inconsistências no formato do ficheiro.
 """
 
 import re
 from datetime import datetime
 
-# Regex para linhas de review (aceita várias quantidades de espaços entre campos)
+#   - r''             : Indica que é uma string "raw", para que os caracteres especiais sejam interpretados.
+#   - ^\s* : Começa no início da linha (^) e ignora quaisquer espaços em branco (\s*).
+#   - (\d{4}-\d{1,2}-\d{1,2}) : Captura uma data no formato AAAA-MM-DD.
+#   - \s+cutomer:?\s* : Procura a palavra "cutomer" (o erro de digitação está no ficheiro original) seguida de espaços.
+#   - ([^\s]+)       : Captura o ID do cliente (uma sequência de caracteres sem espaços).
+#   - rating:\s*(\d+) : Captura o número da avaliação.
+#   - votes:\s*(\d+)  : Captura o número de votos.
+#   - helpful:\s*(\d+): Captura o número de votos úteis.
+# O `flags=re.IGNORECASE` faz com que não se preocupe com maiúsculas ou minúsculas.
 REVIEW_RE = re.compile(
     r'^\s*(\d{4}-\d{1,2}-\d{1,2})\s+cutomer:?\s*([^\s]+)\s+rating:\s*(\d+)\s+votes:\s*(\d+)\s+helpful:\s*(\d+)',
     flags=re.IGNORECASE
 )
 
-# Regex para categorias estilo: |Books[283155]|Subjects[1000]|...
+# Regex para encontrar as partes de uma categoria, como: |Nome[ID]|
 CAT_PART_RE = re.compile(r'\|([^|\[]+)\[(\d+)\]')
 
 def extract_all_categories(path):
     """
-    Primeira passagem: percorre todo o arquivo e extrai todas as categorias
-    com seus old_ids e o parent_old_id imediato.
-
-    Retorna:
-        dict old_id (int) -> {"name": name (str), "parent_old_id": parent_old_id (int or None)}
-    Observações:
-    - Se a mesma old_id aparecer com nomes diferentes, a primeira aparição é preservada.
+    Faz uma primeira leitura rápida do ficheiro, focada apenas em extrair todas as
+    categorias, os seus IDs antigos e a relação de hierarquia (pai/filho).
     """
-    categories = {}  # old_id -> {"name":..., "parent_old_id": ...}
-
+    categories = {}  # Dicionário para guardar as categorias encontradas
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        for raw in f:
-            line = raw.rstrip('\n')
-            # procuramos linhas que contenham '|' categorias (linhas geralmente começam por '|')
-            if '|' in line and '[' in line and ']' in line:
-                # achar todas as partes com regex
+        for raw_line in f:
+            line = raw_line.strip()
+            # Só processamos linhas que parecem ser de categorias
+            if '|' in line and '[' in line:
                 parts = CAT_PART_RE.findall(line)
-                # parts: list of tuples (name, id_str)
-                prev_old_id = None
+                parent_old_id = None
                 for name, id_str in parts:
                     try:
                         old_id = int(id_str)
-                    except:
-                        continue
+                    except ValueError:
+                        continue  # Ignora se o ID não for um número
+                    
                     name = name.strip()
-                    # se não existe, registramos
+                    # Adiciona a categoria ao nosso dicionário apenas se for a primeira vez que a vemos
                     if old_id not in categories:
-                        categories[old_id] = {"name": name, "parent_old_id": prev_old_id}
-                    # se já existe, não sobrescrever (preserva a primeira aparição)
-                    prev_old_id = old_id
+                        categories[old_id] = {"name": name, "parent_old_id": parent_old_id}
+                    
+                    # O ID atual será o pai da próxima categoria na mesma linha
+                    parent_old_id = old_id
     return categories
 
 
 def _parse_category_line_to_list(line):
     """
-    Converte a linha de categorias em uma lista de dicts com old_id, name e parent_old_id.
-    Exemplo de entrada:
-       "|Books[283155]|Subjects[1000]|Literature & Fiction[17]|Drama[2159]|United States[2160]"
-    Retorna:
-       [
-         {"old_id":283155, "name":"Books", "parent_old_id": None},
-         {"old_id":1000, "name":"Subjects", "parent_old_id":283155},
-         ...
-       ]
+    Função auxiliar para transformar uma linha de texto de categorias numa lista estruturada.
     """
     parts = CAT_PART_RE.findall(line)
-    out = []
-    prev = None
+    structured_cats = []
+    parent_id = None
     for name, id_str in parts:
         try:
             old_id = int(id_str)
-        except:
+        except ValueError:
             continue
+        
         name = name.strip()
-        out.append({"old_id": old_id, "name": name, "parent_old_id": prev})
-        prev = old_id
-    return out
+        structured_cats.append({"old_id": old_id, "name": name, "parent_old_id": parent_id})
+        parent_id = old_id
+    return structured_cats
 
 
 def parse_snap(path):
     """
-    Iterador que gera um dicionário por produto, de forma streaming (não carrega tudo em memória).
-    Cada produto tem:
-        'id', 'asin', 'title', 'group', 'salesrank', 'similar' (list of asins),
-        'categories' (list of dicts with old_id, name, parent_old_id),
-        'reviews' (list of dicts)
-    Observações:
-    - As linhas de review são detectadas via regex REVIEW_RE, sem dependência de indentação.
-    - A função é tolerante a linhas estranhas/formatos levemente diferentes.
+    Função principal de parsing. Lê o ficheiro de dados produto a produto.
+    Esta função é um "gerador" (usa 'yield'), o que significa que não carrega
+    o ficheiro todo para a memória, tornando o processo muito eficiente.
     """
-    product = None
+    current_product = None
 
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        for raw in f:
-            line = raw.rstrip('\n')
-            if line.startswith('Id:'):
-                # finaliza produto anterior
-                if product:
-                    yield product
-                product = {
-                    'id': int(line.split(':', 1)[1].strip()),
-                    'asin': None,
-                    'title': None,
-                    'group': None,
-                    'salesrank': None,
-                    'similar': [],
-                    'categories': [],  # list of dicts (old_id, name, parent_old_id)
-                    'reviews': []
+        for raw_line in f:
+            line = raw_line.strip()
+            line_lower = line.lower() # Normalizamos para minúsculas para evitar problemas com 'Title' vs 'title'
+
+            # Se a linha começa com 'Id:', sabemos que um novo produto começou
+            if line_lower.startswith('id:'):
+                if current_product:
+                    yield current_product # Devolve o produto anterior completo
+                
+                # Inicia um novo dicionário para o produto atual
+                current_product = {
+                    'id': int(line.split(':', 1)[1].strip()), 'asin': None, 'title': None,
+                    'group': None, 'salesrank': None, 'similar': [],
+                    'categories': [], 'reviews': []
                 }
-            elif product is None:
-                # antes do primeiro Id:, ignorar
-                continue
-            elif line.startswith('ASIN:'):
-                product['asin'] = line.split(':', 1)[1].strip()
-            elif line.startswith('title:'):
-                product['title'] = line.split(':', 1)[1].strip()
-            elif line.startswith('group:'):
-                product['group'] = line.split(':', 1)[1].strip()
-            elif line.startswith('salesrank:'):
-                v = line.split(':', 1)[1].strip()
-                try:
-                    product['salesrank'] = int(v)
-                except:
-                    product['salesrank'] = None
-            elif line.startswith('similar:'):
+            elif current_product is None:
+                continue # Ignora linhas antes do primeiro produto
+            
+            # Extrai os campos do produto, usando a linha em minúsculas para a verificação
+            elif line_lower.startswith('asin:'):
+                current_product['asin'] = line.split(':', 1)[1].strip()
+            elif line_lower.startswith('title:'):
+                current_product['title'] = line.split(':', 1)[1].strip()
+            elif line_lower.startswith('group:'):
+                current_product['group'] = line.split(':', 1)[1].strip()
+            elif line_lower.startswith('salesrank:'):
+                value_str = line.split(':', 1)[1].strip()
+                current_product['salesrank'] = int(value_str) if value_str.isdigit() else None
+            elif line_lower.startswith('similar:'):
                 parts = line.split()
-                # linha: similar: 5  B001... B002... ...
                 if len(parts) > 2:
-                    product['similar'] = parts[2:]
-            elif line.startswith('categories:'):
-                # a próxima(s) linha(s) com '|' contêm as categorias reais; ignorar aqui, tratar na linha seguinte
-                pass
-            elif '|' in line and '[' in line and ']' in line:
-                # linha de categorias
+                    current_product['similar'] = parts[2:]
+            
+            # Extrai as categorias
+            elif '|' in line:
                 cats = _parse_category_line_to_list(line)
-                # evitar duplicatas exatas
-                existing_old_ids = {c['old_id'] for c in product['categories']}
-                for c in cats:
-                    if c['old_id'] not in existing_old_ids:
-                        product['categories'].append(c)
-                        existing_old_ids.add(c['old_id'])
+                current_product['categories'].extend(cats)
+
+            # Se não for nenhum dos campos acima, tenta ver se é uma linha de avaliação
             else:
-                # tentar reconhecer reviews com regex (aceita sem indentação)
-                m = REVIEW_RE.match(line)
-                if m:
-                    date_s, cust, rating, votes, helpful = m.groups()
+                match = REVIEW_RE.match(line)
+                if match:
+                    date_str, customer_id, rating, votes, helpful = match.groups()
                     try:
-                        date_obj = datetime.strptime(date_s, '%Y-%m-%d').date()
-                    except:
+                        date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    except ValueError:
                         date_obj = None
-                    product['reviews'].append({
-                        'date': date_obj,
-                        'customer': cust,
-                        'rating': int(rating),
-                        'votes': int(votes),
-                        'helpful': int(helpful)
+                    
+                    current_product['reviews'].append({
+                        'date': date_obj, 'customer': customer_id, 'rating': int(rating),
+                        'votes': int(votes), 'helpful': int(helpful)
                     })
-                # else: ignora outras linhas (ex: 'reviews: total: 8 downloaded: 8 avg rating: 4')
-        # fim do loop
-        if product:
-            yield product
+        
+        # Devolve o último produto do ficheiro
+        if current_product:
+            yield current_product
+
