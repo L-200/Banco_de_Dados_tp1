@@ -1,5 +1,3 @@
-
-#!/usr/bin/env python3
 """
 tp1_3.2.py - ETL otimizado para o SNAP amazon-meta.txt
 
