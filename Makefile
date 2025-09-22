@@ -5,10 +5,19 @@ DB_NAME ?= ecommerce
 DB_USER ?= postgres
 DB_PASS ?= postgres
 
-# ?= define uma variável de ambiente ASIN com esse valor por padrão e variaveis Title e ID caso o user queira buscar por elas
-ASIN ?= "DEFAULT_ASIN_CHANGE_ME"
-TITLE ?= 
-ID ?=
+# para o comando dashboard, que pode receber um dos três argumentos opcionais
+# se nenhum for passado, o comando roda sem nenhum filtro de produto
+PRODUCT_ARG := # Começa vazia por padrão
+
+ifdef ASIN
+    PRODUCT_ARG := --product-asin $(ASIN)
+endif
+ifdef TITLE
+    PRODUCT_ARG := --product-title "$(TITLE)"
+endif
+ifdef ID
+    PRODUCT_ARG := --product-id $(ID)
+endif
 
 #indica que esses alvos não correspondem a arquivos e sim a apelidos de comandos
 .PHONY: help up down etl dashboard logs clean
@@ -50,18 +59,7 @@ etl:
 # Corresponde ao 'docker compose run 3.3'
 # Passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
 #logica if para poder buscar não só pelo asin (como foi dito que seria necessário no discord)
-# Inicializa a variável PRODUCT_ARG vazia para caso nenhuma seja definida
 dashboard:
-	$(eval PRODUCT_ARG :=) 
-	ifdef ASIN
-		$(eval PRODUCT_ARG := --product-asin $(ASIN))
-	endif
-	ifdef TITLE
-		$(eval PRODUCT_ARG := --product-title "$(TITLE)")
-	endif
-	ifdef ID
-		$(eval PRODUCT_ARG := --product-id $(ID))
-	endif
 	docker compose run --rm app python src/tp1_3.3.py \
 		--db-host $(DB_HOST) \
 		--db-port $(DB_PORT) \
