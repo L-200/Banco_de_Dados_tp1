@@ -54,23 +54,25 @@ def insert_categories(conn, categories_by_old_id):
     cur.close()
     return old_to_new_id_map
 
-def update_parent_ids(conn, categories_by_old_id, old_to_new_map):
+def insert_category_hierarchy(conn, categories_by_old_id, old_to_new_map):
     """
-    Atualiza a coluna 'parent_id' para estabelecer a hierarquia de categorias.
+    Insere as relações de hierarquia na nova tabela 'Category_Hierarchy'.
     """
-    updates = []
+    hierarchy_pairs = []
     for old_id, info in categories_by_old_id.items():
         parent_old_id = info.get('parent_old_id')
         if parent_old_id:
-            new_id = old_to_new_map.get(old_id)
+            child_new_id = old_to_new_map.get(old_id)
             parent_new_id = old_to_new_map.get(parent_old_id)
-            if new_id and parent_new_id:
-                updates.append((parent_new_id, new_id))
+            
+            # Só adiciona a relação se os IDs existirem E se não forem iguais
+            if child_new_id and parent_new_id and parent_new_id != child_new_id:
+                hierarchy_pairs.append((parent_new_id, child_new_id))
     
-    if updates:
+    if hierarchy_pairs:
         cur = conn.cursor()
-        sql = "UPDATE Categories SET parent_id = %s WHERE category_id = %s"
-        cur.executemany(sql, updates)
+        sql = "INSERT INTO Category_Hierarchy (parent_category_id, child_category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING"
+        cur.executemany(sql, hierarchy_pairs)
         conn.commit()
         cur.close()
 
@@ -192,16 +194,16 @@ def main():
         print(f"Encontradas {len(categories)} categorias únicas.")
         print("A inserir categorias e a criar mapa de IDs...")
         id_map = insert_categories(conn, categories)
-        print("A atualizar a hierarquia de categorias...")
-        update_parent_ids(conn, categories, id_map)
+        print("A inserir a hierarquia de categorias...")
+        insert_category_hierarchy(conn, categories, id_map)
         print("A processar produtos, categorias e avaliações...")
         valid_asins, potential_pairs = process_products_and_reviews(conn, args.input, id_map)
         
-        # --- NOVO PASSO FINAL ---
-        # Insere as relações apenas depois de todos os produtos terem sido processados
         insert_filtered_related_products(conn, valid_asins, potential_pairs)
 
         print("\nProcesso de ETL concluído com sucesso!")
+        sys.exit(0)
+        
     except Exception as e:
         print(f"\nOcorreu um erro fatal durante o ETL: {e}")
     finally:

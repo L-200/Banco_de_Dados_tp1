@@ -8,19 +8,21 @@ As funções foram desenhadas para serem eficientes em memória e robustas a peq
 import re
 from datetime import datetime
 
-#   - r''             : Indica que é uma string "raw", para que os caracteres especiais sejam interpretados.
-#   - ^\s* : Começa no início da linha (^) e ignora quaisquer espaços em branco (\s*).
-#   - (\d{4}-\d{1,2}-\d{1,2}) : Captura uma data no formato AAAA-MM-DD.
-#   - \s+cutomer:?\s* : Procura a palavra "cutomer" (o erro de digitação está no ficheiro original) seguida de espaços.
-#   - ([^\s]+)       : Captura o ID do cliente (uma sequência de caracteres sem espaços).
-#   - rating:\s*(\d+) : Captura o número da avaliação.
-#   - votes:\s*(\d+)  : Captura o número de votos.
-#   - helpful:\s*(\d+): Captura o número de votos úteis.
-# O `flags=re.IGNORECASE` faz com que não se preocupe com maiúsculas ou minúsculas.
-REVIEW_RE = re.compile(
-    r'^\s*(\d{4}-\d{1,2}-\d{1,2})\s+cutomer:?\s*([^\s]+)\s+rating:\s*(\d+)\s+votes:\s*(\d+)\s+helpful:\s*(\d+)',
-    flags=re.IGNORECASE
-)
+REVIEW_RE = re.compile(r"""
+    ^\s*                               # possível espaço no começo da linha
+    (?P<date>\d{4}-\d{1,2}-\d{1,2})    # data no formato YYYY-MM-DD
+    \s+
+    cutomer:?                           # palavra "cutomer" (possível typo: "customer"), com ":" opcional
+    \s*
+    (?P<customer>[^\s]+)                # nome do cliente (não espaços)
+    \s+
+    rating:\s*(?P<rating>\d+)           # rating
+    \s+
+    votes:\s*(?P<votes>\d+)             # número de votos
+    \s+
+    helpful:\s*(?P<helpful>\d+)         # número de votos úteis
+""", re.IGNORECASE | re.VERBOSE)
+
 
 # Regex para encontrar as partes de uma categoria, como: |Nome[ID]|
 CAT_PART_RE = re.compile(r'\|([^|\[]+)\[(\d+)\]')

@@ -3,42 +3,47 @@ DROP TABLE IF EXISTS Product_category CASCADE;
 DROP TABLE IF EXISTS Related_products CASCADE;
 DROP TABLE IF EXISTS Reviews CASCADE;
 DROP TABLE IF EXISTS Products CASCADE;
+DROP TABLE IF EXISTS Category_Hierarchy CASCADE;
 DROP TABLE IF EXISTS Categories CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS ProductReviewSummary; -- Adicionado por segurança
 
 --tabela que guarda as categorias
 CREATE TABLE Categories (
     category_id SERIAL PRIMARY KEY,
     category_source_id INT UNIQUE,
-    category_name TEXT NOT NULL UNIQUE,
-    parent_id INT REFERENCES Categories(category_id) --auto-relacionamento para lidar com a hierarquia de categorias
+    category_name TEXT NOT NULL UNIQUE
+);
 
+-- Tabela que armazena explicitamente as relações de hierarquia
+CREATE TABLE Category_Hierarchy (
+    parent_category_id INT NOT NULL REFERENCES Categories(category_id),
+    child_category_id INT NOT NULL REFERENCES Categories(category_id),
+    PRIMARY KEY (parent_category_id, child_category_id),
+    CHECK (parent_category_id <> child_category_id)
 );
 
 --tabela que guarda os produtos
 CREATE TABLE Products (
-    source_id INT UNIQUE, --os 2 tem que ser unic para podermos pesquisar com os 2  
+    source_id INT UNIQUE,
     asin VARCHAR(20) PRIMARY KEY,
-    titulo TEXT, --não pode ser unico pq tem produtos com o mesmo nome
+    titulo TEXT NOT NULL,
     group_name TEXT,
     salesrank INT,
     total_reviews INT DEFAULT 0,
     qntd_downloads INT DEFAULT 0,
     average_rating DECIMAL (3, 2),
-
     CHECK (average_rating >= 1 AND average_rating <= 5)
 );
 
 --tabela que relaciona as reviews com os consumidores, os produtos e diz informações sobre essas reviews
 CREATE TABLE reviews (
-    review_id      SERIAL PRIMARY KEY,  --precisamos gerar
+    review_id      SERIAL PRIMARY KEY,
     product_asin   VARCHAR(20) REFERENCES Products(asin),         
     customer_id    VARCHAR(20),                
     rating         SMALLINT,            
     review_date    DATE,
     votes          INT DEFAULT 0, 
     helpful        INT DEFAULT 0,
-
-    --checagem para garantir que a avaliação esteja entre 1 e 5
     CHECK (rating >= 1 AND rating <= 5)
 );
 
@@ -46,16 +51,38 @@ CREATE TABLE reviews (
 CREATE TABLE Related_products (
     product1_asin VARCHAR(20) REFERENCES Products(asin),
     product2_asin VARCHAR(20) REFERENCES Products(asin),
-
     PRIMARY KEY (product1_asin, product2_asin),
-
-    --restrição para não permitir que um produto seja relacionado a ele mesmo ou que haja duplicidade de relações
     CHECK (product1_asin < product2_asin)
 );
 
 CREATE TABLE Product_category (
     product_asin VARCHAR(20) REFERENCES Products(asin),
     category_id INT REFERENCES Categories(category_id),
-
     PRIMARY KEY (product_asin, category_id)
 );
+
+
+-- Resumo de reviews por produto (evita recalcular sempre)
+CREATE MATERIALIZED VIEW ProductReviewSummary AS
+SELECT
+    product_asin,
+    SUM(helpful) AS total_helpful,
+    COUNT(*) AS total_reviews
+FROM Reviews
+GROUP BY product_asin;
+
+-- Índices para joins e recursão
+CREATE INDEX idx_reviews_product_asin
+    ON Reviews(product_asin);
+
+CREATE INDEX idx_product_category_product_asin
+    ON Product_category(product_asin);
+
+CREATE INDEX idx_product_category_category_id
+    ON Product_category(category_id);
+
+CREATE INDEX idx_categories_parent_id
+    ON Category_Hierarchy(parent_category_id);
+
+CREATE INDEX idx_child_category_id
+    ON Category_Hierarchy(child_category_id);

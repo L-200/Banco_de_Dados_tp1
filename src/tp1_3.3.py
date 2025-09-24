@@ -3,36 +3,21 @@ import sys
 import psycopg
 import os
 import pandas as pd
-
-def get_conn(host, port, dbname, user, password):
-    # cria e retorna uma conexão com o banco de dados usando os parametros fornecidos
-    try:
-        conn_string = f"host={host} port={port} dbname={dbname} user={user} password={password}" #f para não ter que usar conn_string = "host=" + host + ...
-        conn = psycopg.connect(conn_string)
-        return conn
-    except psycopg.OperationalError as e:
-        print(f"Erro ao conectar ao banco de dados: {e}", file=sys.stderr)
-        sys.exit(1)
+from db import get_conn
 
 def print_results(cursor, title,  output=None, csv_filename=None):
-    # imprime os resultados de uma consulta de forma formatada
+    # (Esta função permanece inalterada)
     print(f"\n{'='*10} {title} {'='*10}")
     results = cursor.fetchall()
     if not results:
         print("Nenhum resultado encontrado.")
         return
-
-    headers = [desc[0] for desc in cursor.description] # o psycopg preenche o .description com o nome das colunas
+    headers = [desc[0] for desc in cursor.description]
     df = pd.DataFrame(results, columns=headers)
-
-    # Imprime no STDOUT
-    print(df.to_string(index=False)) # index=False para não imprimir o índice do DataFrame que o pandas cria automaticamente
+    print(df.to_string(index=False))
     print(f"Total de registros: {len(results)}")
-
-    # Salva em csv se o diretorio e nome do arquivo forem fornecidos
     if output and csv_filename:
         try:
-            # Garante que o diretorio de saída exista
             os.makedirs(output, exist_ok=True)
             filepath = os.path.join(output, csv_filename)
             df.to_csv(filepath, index=False)
@@ -42,34 +27,48 @@ def print_results(cursor, title,  output=None, csv_filename=None):
         except Exception as e:
             print(f"Ocorreu um erro inesperado ao salvar o CSV: {e}", file=sys.stderr)
 
-#  Funções de Consultas:
-
-def query1(conn, product_asin, output):
-    #Dado um produto, lista os 5 comentários mais úteis e com maior avaliaçãoe os 5 comentários mais úteis e com menor avaliação.
-    
+def get_product_asin(conn, identifier, identifier_type):
+    """
+    Busca o ASIN de um produto usando seu source_id, título ou ASIN.
+    """
     with conn.cursor() as cur:
-        # 5 mais úteis com maior avaliação
-        sql_top = """
-            SELECT rating, helpful, votes, customer_id, review_date
-            FROM reviews
-            WHERE product_asin = %s
-            ORDER BY helpful DESC, rating DESC
-            LIMIT 5;
-        """
+        if identifier_type == 'source_id':
+            # Busca pelo source_id que é um INT UNIQUE no schema
+            sql = "SELECT asin FROM Products WHERE source_id = %s;" 
+            cur.execute(sql, (identifier,))
+        elif identifier_type == 'titulo':
+            sql = "SELECT asin, titulo FROM Products WHERE titulo ILIKE %s;"
+            cur.execute(sql, (f'%{identifier}%',))
+        else: # identifier_type == 'asin'
+            sql = "SELECT asin FROM Products WHERE asin = %s;"
+            cur.execute(sql, (identifier,)) #checando se tem mais de um (não deveria ter, mas vai que acontece)
+
+        results = cur.fetchall()
+
+        if len(results) == 0:
+            print(f"ERRO: Nenhum produto encontrado com {identifier_type} '{identifier}'.", file=sys.stderr)
+            return None
+        elif len(results) > 1:
+            print(f"ERRO: Múltiplos produtos encontrados com o título '{identifier}'. Seja mais específico ou use o ASIN/source_id.", file=sys.stderr)
+            print("Produtos encontrados:")
+            for row in results:
+                print(f"  - ASIN: {row[0]}, Título: {row[1]}")
+            return None
+        else:
+            return results[0][0]
+
+#  Funções de Consultas (query1 a query7 permanecem inalteradas)
+def query1(conn, product_asin, output):
+    # (Código inalterado)
+    with conn.cursor() as cur:
+        sql_top = "SELECT rating, helpful, votes, customer_id, review_date FROM reviews WHERE product_asin = %s ORDER BY helpful DESC, rating DESC LIMIT 5;"
         cur.execute(sql_top, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com maior avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_pos_{product_asin}.csv")
-
-        # 5 mais úteis com menor avaliação
-        sql_bottom = """
-            SELECT rating, helpful, votes, customer_id, review_date
-            FROM reviews
-            WHERE product_asin = %s
-            ORDER BY helpful DESC, rating ASC
-            LIMIT 5;
-        """
+        sql_bottom = "SELECT rating, helpful, votes, customer_id, review_date FROM reviews WHERE product_asin = %s ORDER BY helpful DESC, rating ASC LIMIT 5;"
         cur.execute(sql_bottom, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com menor avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_neg_{product_asin}.csv")
 
+# ... (as outras funções de query2 a query7 continuam exatamente as mesmas) ...
 def query2(conn, product_asin, output):
     # dado um produto, lista os produtos similares com maiores vendas (melhor salesrank).
     
@@ -159,45 +158,38 @@ def query5(conn, output):
 def query6(conn, output):
     # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando a hierarquia (subcategorias contam para as categorias "pai").
 
+    print("Essa consulta pode demorar um pouco, porém funciona. Por favor aguarde...")
     with conn.cursor() as cur:
         sql = """
             WITH RECURSIVE CategoriaCompleta AS (
-                -- Ponto de partida: a categoria direta e o produto
                 SELECT
                     pc.category_id,
                     pc.product_asin
                 FROM
                     Product_category pc
-
                 UNION ALL
-
-                -- Passo recursivo: sobe na hierarquia, mantendo a referência ao produto
                 SELECT
-                    c.parent_id,
+                    ch.parent_category_id,
                     cc.product_asin
                 FROM
                     CategoriaCompleta cc
                 JOIN
-                    Categories c ON cc.category_id = c.category_id
-                WHERE
-                    c.parent_id IS NOT NULL
+                    Category_Hierarchy ch ON cc.category_id = ch.child_category_id
             )
-            -- Agora, agregue os resultados
             SELECT
                 cat.category_name,
-                AVG(r.helpful) AS media_avaliacoes_uteis
+                SUM(prs.total_helpful) * 1.0 / NULLIF(SUM(prs.total_reviews), 0) AS media_avaliacoes_uteis
             FROM
                 CategoriaCompleta cc
             JOIN
-                Categories cat ON cc.category_id = cat.category_id
+                ProductReviewSummary prs ON cc.product_asin = prs.product_asin
             JOIN
-                Reviews r ON cc.product_asin = r.product_asin
+                Categories cat ON cc.category_id = cat.category_id
             GROUP BY
-                cat.category_name
+                cat.category_id, cat.category_name
             ORDER BY
                 media_avaliacoes_uteis DESC
-            LIMIT 5;
-        """
+            LIMIT 5;        """
         cur.execute(sql)
         print_results(cur, "Query 6: Top 5 categorias com maior média de avaliações úteis positivas", output, "q6_top5_categorias_maior_media_avaliacoes_uteis.csv")
 
@@ -228,18 +220,20 @@ def query7(conn, output):
         cur.execute(sql)
         print_results(cur, "Query 7: Top 10 clientes que mais fizeram comentários por grupo de produto", output, "q7_top10_clientes_mais_comentarios_por_grupo.csv")
 
+
 def main():
-    """
-    Função principal que executa o script do dashboard.
-    """
     parser = argparse.ArgumentParser(description="Executa consultas do dashboard no banco de dados de e-commerce.")
     parser.add_argument("--db-host", required=True, help="Host do banco de dados")
     parser.add_argument("--db-port", type=int, default=5432, help="Porta do banco de dados")
     parser.add_argument("--db-name", required=True, help="Nome do banco de dados")
     parser.add_argument("--db-user", required=True, help="Usuário do banco de dados")
     parser.add_argument("--db-pass", required=True, help="Senha do banco de dados")
-    parser.add_argument("--product-asin", help="ASIN do produto para as consultas 1, 2 e 3")
     parser.add_argument("--output", help="Diretório para salvar os resultados das consultas em arquivos CSV")
+
+    product_identifier_group = parser.add_mutually_exclusive_group()
+    product_identifier_group.add_argument("--product-asin", help="ASIN do produto para as consultas 1, 2 e 3")
+    product_identifier_group.add_argument("--product-id", type=int, help="ID do produto (usa a coluna source_id) para as consultas 1, 2 e 3")
+    product_identifier_group.add_argument("--product-title", help="Título (ou parte do título) do produto para as consultas 1, 2 e 3")
 
     args = parser.parse_args()
 
@@ -248,22 +242,30 @@ def main():
         conn = get_conn(args.db_host, args.db_port, args.db_name, args.db_user, args.db_pass)
         print("Conexão com o banco de dados estabelecida com sucesso.")
 
-        # Executa consultas que dependem de um ASIN
+        target_asin = None
+        
         if args.product_asin:
-            query1(conn, args.product_asin, args.output)
-            query2(conn, args.product_asin, args.output)
-            query3(conn, args.product_asin, args.output)
-        else:
-            print("\nAVISO: As consultas 1, 2 e 3 não foram executadas pois o parâmetro --product-asin não foi fornecido.")
+            target_asin = get_product_asin(conn, args.product_asin, 'asin')
+        elif args.product_id:
+            target_asin = get_product_asin(conn, args.product_id, 'source_id')
+        elif args.product_title:
+            target_asin = get_product_asin(conn, args.product_title, 'titulo')
 
-        # Executa consultas gerais
+        if target_asin:
+            print(f"\n--- Executando consultas para o produto com ASIN: {target_asin} ---")
+            query1(conn, target_asin, args.output)
+            query2(conn, target_asin, args.output)
+            query3(conn, target_asin, args.output)
+        else:
+            print("\nAVISO: As consultas 1, 2 e 3 não foram executadas pois nenhum identificador de produto foi fornecido ou o produto não foi encontrado.")
+
+        print("\n--- Executando consultas gerais ---")
         query4(conn, args.output)
         query5(conn, args.output)
         query6(conn, args.output)
         query7(conn, args.output)
 
         sys.exit(0)
-
     except Exception as e:
         print(f"Ocorreu um erro inesperado: {e}", file=sys.stderr)
         sys.exit(1)
