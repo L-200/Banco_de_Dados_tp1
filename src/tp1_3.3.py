@@ -101,7 +101,7 @@ def query3(conn, product_asin, output):
             SELECT
                 review_date,
                 COUNT(rating) AS num_avaliacoes,
-                AVG(rating) AS media_avaliacoes
+                CAST(AVG(rating) AS DECIMAL(3, 2)) AS media_avaliacoes
             FROM reviews
             WHERE product_asin = %s
             GROUP BY review_date
@@ -156,43 +156,72 @@ def query5(conn, output):
         print_results(cur, "Query 5: Top 10 produtos com maior média de avaliações úteis positivas", output, "q5_top10_produtos_maior_media_avaliacoes_uteis.csv")
 
 def query6(conn, output):
-    # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando a hierarquia (subcategorias contam para as categorias "pai").
+    # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando a hierarquia (pai-filho).
 
     print("Essa consulta pode demorar um pouco, porém funciona. Por favor aguarde...")
     with conn.cursor() as cur:
-        sql = """
-            WITH RECURSIVE CategoriaCompleta AS (
+        
+        # --- ETAPA 1: ATUALIZAR A VIEW EM UMA CHAMADA SEPARADA ---
+        print("Atualizando a visão materializada (ProductReviewSummary)...")
+        refresh_sql = "REFRESH MATERIALIZED VIEW ProductReviewSummary;"
+        cur.execute(refresh_sql)
+        print("Visão atualizada com sucesso.")
+
+        # --- ETAPA 2: EXECUTAR A CONSULTA SELECT ---
+        # Agora o SQL contém apenas a consulta que retorna resultados.
+        select_sql = """
+            WITH
+            -- Calcula os totais para produtos DIRETAMENTE em cada categoria.
+            DirectCategoryTotals AS (
                 SELECT
                     pc.category_id,
-                    pc.product_asin
+                    SUM(prs.total_helpful) AS total_helpful,
+                    SUM(prs.total_reviews) AS total_reviews
                 FROM
                     Product_category pc
-                UNION ALL
-                SELECT
-                    ch.parent_category_id,
-                    cc.product_asin
-                FROM
-                    CategoriaCompleta cc
                 JOIN
-                    Category_Hierarchy ch ON cc.category_id = ch.child_category_id
+                    ProductReviewSummary prs ON pc.product_asin = prs.product_asin
+                GROUP BY
+                    pc.category_id
+            ),
+            -- Para cada categoria 'pai', calcula a soma dos totais de seus 'filhos' diretos.
+            ChildTotals AS (
+                SELECT
+                    h.parent_category_id AS category_id,
+                    SUM(dct.total_helpful) AS total_helpful,
+                    SUM(dct.total_reviews) AS total_reviews
+                FROM
+                    Category_Hierarchy h
+                JOIN
+                    DirectCategoryTotals dct ON h.child_category_id = dct.category_id
+                GROUP BY
+                    h.parent_category_id
             )
+            -- Combina os totais diretos com os totais dos filhos e calcula a média final.
             SELECT
                 cat.category_name,
-                SUM(prs.total_helpful) * 1.0 / NULLIF(SUM(prs.total_reviews), 0) AS media_avaliacoes_uteis
+                (
+                    (COALESCE(dct.total_helpful, 0) + COALESCE(ct.total_helpful, 0))::DECIMAL
+                    / NULLIF(COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0), 0)
+                ) AS media_avaliacoes_uteis,
+                (COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0)) AS total_reviews_agregado
             FROM
-                CategoriaCompleta cc
-            JOIN
-                ProductReviewSummary prs ON cc.product_asin = prs.product_asin
-            JOIN
-                Categories cat ON cc.category_id = cat.category_id
-            GROUP BY
-                cat.category_id, cat.category_name
+                Categories cat
+            LEFT JOIN
+                DirectCategoryTotals dct ON cat.category_id = dct.category_id
+            LEFT JOIN
+                ChildTotals ct ON cat.category_id = ct.category_id
+            WHERE
+                (COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0)) > 0
             ORDER BY
                 media_avaliacoes_uteis DESC
-            LIMIT 5;        """
-        cur.execute(sql)
+            LIMIT 5;
+        """
+        cur.execute(select_sql)
+        
+        # A função print_results agora será chamada após um SELECT, que é o correto.
         print_results(cur, "Query 6: Top 5 categorias com maior média de avaliações úteis positivas", output, "q6_top5_categorias_maior_media_avaliacoes_uteis.csv")
-
+        
 def query7(conn, output):
     # lista os 10 clientes que mais fizeram comentários por grupo de produto.
     
