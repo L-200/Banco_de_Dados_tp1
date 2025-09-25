@@ -31,7 +31,6 @@ help:
 	@echo "  make etl    -> Executa o script de ETL em um contêiner temporário."
 	@echo "  make dashboard <var>=<valor> -> Executa as consultas para um produto específico."
 	@echo "     Use: ASIN=..., TITLE=\"...\", ID=... ou só deixe ele vazio se não quiser as querys que dependem de um produto"
-	@echo "  make logs   -> Exibe os logs do serviço da aplicação em tempo real."
 	@echo "  make clean  -> Para tudo e remove também os volumes (APAGA OS DADOS DO BANCO)."
 	@echo ""
 
@@ -55,9 +54,9 @@ etl:
 		--db-pass $(DB_PASS) \
 		--input /data/snap_amazon.txt
 
-# Executa o script de consultas do dashboard como um comando unico em um conteiner que será removido no final.
-# Corresponde ao 'docker compose run 3.3'
-# Passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
+# executa o script de consultas do dashboard como um comando unico em um conteiner que será removido no final.
+# corresponde ao 'docker compose run 3.3'
+# passa as variaveis de conexão com o banco como especificado na seção 4.1 do trabalho
 #logica if para poder buscar não só pelo asin (como foi dito que seria necessário no discord)
 dashboard:
 	docker compose run --rm app python src/tp1_3.3.py \
@@ -69,11 +68,7 @@ dashboard:
 		$(PRODUCT_ARG) \
 		--output /app/out
 
-# Mostra os logs do serviço 'app' e continua exibindo em tempo real (-f).
-logs:
-	docker compose logs -f app
-
-# Comando de limpeza mais agressivo: para os contêineres e remove os volumes de dados.
-# Use com cuidado, pois apaga todos os dados do banco!
+# comando de limpeza mais agressivo: para os contêineres e remove os volumes de dados.
+# use com cuidado, pois apaga todos os dados do banco!
 clean:
 	docker compose down -v

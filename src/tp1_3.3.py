@@ -1,12 +1,26 @@
 import argparse
 import sys
-import psycopg
 import os
+import time
 import pandas as pd
 from db import get_conn
 
+#mesma coisa do que tá no 3.2.py
+def log_time(func):
+    """Decorator que regista e imprime o tempo de execução de uma consulta."""
+    def wrapper(*args, **kwargs):
+        # usando 'func.__name__' para obter o nome da função original
+        print(f"\n-> Executando consulta: '{func.__name__}'...")
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f"<- Consulta '{func.__name__}' concluída em {total_time:.4f} segundos.") #unica mudança
+        return result
+    return wrapper
+
 def print_results(cursor, title,  output=None, csv_filename=None):
-    # (Esta função permanece inalterada)
+
     print(f"\n{'='*10} {title} {'='*10}")
     results = cursor.fetchall()
     if not results:
@@ -33,13 +47,14 @@ def get_product_asin(conn, identifier, identifier_type):
     """
     with conn.cursor() as cur:
         if identifier_type == 'source_id':
-            # Busca pelo source_id que é um INT UNIQUE no schema
             sql = "SELECT asin FROM Products WHERE source_id = %s;" 
+
             cur.execute(sql, (identifier,))
         elif identifier_type == 'titulo':
             sql = "SELECT asin, titulo FROM Products WHERE titulo ILIKE %s;"
             cur.execute(sql, (f'%{identifier}%',))
-        else: # identifier_type == 'asin'
+
+        else: # é um asin
             sql = "SELECT asin FROM Products WHERE asin = %s;"
             cur.execute(sql, (identifier,)) #checando se tem mais de um (não deveria ter, mas vai que acontece)
 
@@ -57,18 +72,24 @@ def get_product_asin(conn, identifier, identifier_type):
         else:
             return results[0][0]
 
-#  Funções de Consultas (query1 a query7 permanecem inalteradas)
+#  Funções de Consultas
+@log_time
 def query1(conn, product_asin, output):
-    # (Código inalterado)
+
     with conn.cursor() as cur:
-        sql_top = "SELECT rating, helpful, votes, customer_id, review_date FROM reviews WHERE product_asin = %s ORDER BY helpful DESC, rating DESC LIMIT 5;"
+        sql_top = """
+        SELECT rating, helpful, votes, customer_id, review_date
+        FROM reviews 
+        WHERE product_asin = %s 
+        ORDER BY helpful DESC, rating DESC LIMIT 5;
+        """
         cur.execute(sql_top, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com maior avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_pos_{product_asin}.csv")
         sql_bottom = "SELECT rating, helpful, votes, customer_id, review_date FROM reviews WHERE product_asin = %s ORDER BY helpful DESC, rating ASC LIMIT 5;"
         cur.execute(sql_bottom, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com menor avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_neg_{product_asin}.csv")
 
-# ... (as outras funções de query2 a query7 continuam exatamente as mesmas) ...
+@log_time
 def query2(conn, product_asin, output):
     # dado um produto, lista os produtos similares com maiores vendas (melhor salesrank).
     
@@ -92,7 +113,7 @@ def query2(conn, product_asin, output):
         cur.execute(sql, (product_asin, product_asin, product_asin, product_asin))
         print_results(cur, f"Query 2: produtos similares a {product_asin} com melhor ranking de vendas", output, f"q2_similar_products_sales_melhor_{product_asin}.csv")
 
-
+@log_time
 def query3(conn, product_asin, output):
     #dado um produto, mostra a evolução diária das médias de avaliação
 
@@ -110,6 +131,7 @@ def query3(conn, product_asin, output):
         cur.execute(sql, (product_asin,))
         print_results(cur, f"Query 3: Evolução diária das médias de avaliação para o produto {product_asin}", output, f"q3_evolucao_media_avaliacoes_{product_asin}.csv")
 
+@log_time
 def query4(conn, output):
     #lista os 10 produtos líderes de venda em cada grupo de produtos.
     
@@ -135,6 +157,7 @@ def query4(conn, output):
         cur.execute(sql)
         print_results(cur, "Query 4: Top 10 produtos líderes de venda por grupo de produtos", output, "q4_top10_produtos_lideres_venda_por_grupo.csv")
 
+@log_time
 def query5(conn, output):
     #lista os 10 produtos com a maior média de avaliações úteis positivas.
 
@@ -143,7 +166,7 @@ def query5(conn, output):
             SELECT
                 p.asin,
                 p.titulo,
-                AVG(r.helpful) AS media_avaliacoes_uteis,
+                ROUND(AVG(r.helpful), 2) AS media_avaliacoes_uteis,
                 COUNT(r.review_id) AS total_avaliacoes
             FROM Products p
             JOIN reviews r ON p.asin = r.product_asin
@@ -155,20 +178,19 @@ def query5(conn, output):
         cur.execute(sql)
         print_results(cur, "Query 5: Top 10 produtos com maior média de avaliações úteis positivas", output, "q5_top10_produtos_maior_media_avaliacoes_uteis.csv")
 
+@log_time
 def query6(conn, output):
     # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando a hierarquia (pai-filho).
 
-    print("Essa consulta pode demorar um pouco, porém funciona. Por favor aguarde...")
     with conn.cursor() as cur:
         
-        # --- ETAPA 1: ATUALIZAR A VIEW EM UMA CHAMADA SEPARADA ---
+        # atualiza a visão materializada antes de executar a consulta para evitar erro
         print("Atualizando a visão materializada (ProductReviewSummary)...")
         refresh_sql = "REFRESH MATERIALIZED VIEW ProductReviewSummary;"
         cur.execute(refresh_sql)
         print("Visão atualizada com sucesso.")
 
-        # --- ETAPA 2: EXECUTAR A CONSULTA SELECT ---
-        # Agora o SQL contém apenas a consulta que retorna resultados.
+        # query principal
         select_sql = """
             WITH
             -- Calcula os totais para produtos DIRETAMENTE em cada categoria.
@@ -200,9 +222,9 @@ def query6(conn, output):
             -- Combina os totais diretos com os totais dos filhos e calcula a média final.
             SELECT
                 cat.category_name,
-                (
+                ROUND(
                     (COALESCE(dct.total_helpful, 0) + COALESCE(ct.total_helpful, 0))::DECIMAL
-                    / NULLIF(COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0), 0)
+                    / NULLIF(COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0), 0), 2
                 ) AS media_avaliacoes_uteis,
                 (COALESCE(dct.total_reviews, 0) + COALESCE(ct.total_reviews, 0)) AS total_reviews_agregado
             FROM
@@ -218,10 +240,9 @@ def query6(conn, output):
             LIMIT 5;
         """
         cur.execute(select_sql)
-        
-        # A função print_results agora será chamada após um SELECT, que é o correto.
         print_results(cur, "Query 6: Top 5 categorias com maior média de avaliações úteis positivas", output, "q6_top5_categorias_maior_media_avaliacoes_uteis.csv")
         
+@log_time
 def query7(conn, output):
     # lista os 10 clientes que mais fizeram comentários por grupo de produto.
     
@@ -251,6 +272,7 @@ def query7(conn, output):
 
 
 def main():
+    #declarando os argumentos aceitos
     parser = argparse.ArgumentParser(description="Executa consultas do dashboard no banco de dados de e-commerce.")
     parser.add_argument("--db-host", required=True, help="Host do banco de dados")
     parser.add_argument("--db-port", type=int, default=5432, help="Porta do banco de dados")
@@ -259,10 +281,16 @@ def main():
     parser.add_argument("--db-pass", required=True, help="Senha do banco de dados")
     parser.add_argument("--output", help="Diretório para salvar os resultados das consultas em arquivos CSV")
 
+    #criando um grupo de argumentos mutuamente exclusivos para identificar o produto
     product_identifier_group = parser.add_mutually_exclusive_group()
     product_identifier_group.add_argument("--product-asin", help="ASIN do produto para as consultas 1, 2 e 3")
     product_identifier_group.add_argument("--product-id", type=int, help="ID do produto (usa a coluna source_id) para as consultas 1, 2 e 3")
     product_identifier_group.add_argument("--product-title", help="Título (ou parte do título) do produto para as consultas 1, 2 e 3")
+
+    main_start_time = time.perf_counter()
+    print("="*50)
+    print("INICIANDO SCRIPT DE CONSULTAS")
+    print("="*50)
 
     args = parser.parse_args()
 
@@ -302,6 +330,13 @@ def main():
         if conn:
             conn.close()
             print("\nConexão com o banco de dados fechada.")
+        
+        main_end_time = time.perf_counter()
+        total_script_time = main_end_time - main_start_time
+        print("="*50)
+        print(f"FIM DO SCRIPT. Tempo total de execução: {total_script_time:.4f} segundos.")
+        print("="*50)
+
 
 if __name__ == "__main__":
     main()

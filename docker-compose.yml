@@ -5,6 +5,7 @@ services:
     image: postgres:15-alpine
     container_name: tp1_db
 
+    #variaveis de ambiente para o banco funcionar
     environment: 
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -29,7 +30,7 @@ services:
 
     restart: unless-stopped
 
-  # SERVIÇO DA APLICAÇÃO PYTHON
+  # SERVIÇO DO APP
   app:
     build: .
     container_name: tp1_python_app
@@ -44,7 +45,7 @@ services:
 
     volumes:
       - ./data:/data:ro #permissão de leitura do data do diretorio host para o container atraves de um "atalho"
-      - ./out:/app/out         # saída dos relatórios/CSVs
+      - ./out:/app/out # saída dos relatórios/CSVs
     
     networks:
       - app-network
