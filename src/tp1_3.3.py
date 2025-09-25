@@ -91,7 +91,7 @@ def query1(conn, product_asin, output):
 
 @log_time
 def query2(conn, product_asin, output):
-    # dado um produto, lista os produtos similares com maiores vendas (melhor salesrank).
+    # dado um produto, lista os produtos similares com maiores vendas (melhor salesrank)
     
     with conn.cursor() as cur:
         sql = """

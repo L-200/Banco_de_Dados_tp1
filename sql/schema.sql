@@ -10,7 +10,7 @@ DROP MATERIALIZED VIEW IF EXISTS ProductReviewSummary; -- Adicionado por seguran
 --tabela que guarda as categorias
 CREATE TABLE Categories (
     category_id SERIAL PRIMARY KEY,
-    category_source_id INT UNIQUE,
+    category_source_id INT UNIQUE NOT NULL,
     category_name TEXT NOT NULL
 );
 
