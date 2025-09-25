@@ -1,4 +1,3 @@
-# src/utils.py
 """
 Este módulo contém as funções para analisar (fazer o "parsing") do ficheiro de dados `amazon-meta.txt`, que tem um formato de texto semi-estruturado.
 
@@ -9,7 +8,7 @@ import re
 from datetime import datetime
 
 REVIEW_RE = re.compile(r"""
-    ^\s*                               # possível espaço no começo da linha
+    ^\s* # possível espaço no começo da linha
     (?P<date>\d{4}-\d{1,2}-\d{1,2})    # data no formato YYYY-MM-DD
     \s+
     cutomer:?                           # palavra "cutomer" (possível typo: "customer"), com ":" opcional
@@ -25,7 +24,25 @@ REVIEW_RE = re.compile(r"""
 
 
 # Regex para encontrar as partes de uma categoria, como: |Nome[ID]|
-CAT_PART_RE = re.compile(r'\|([^|\[]+)\[(\d+)\]')
+CAT_PART_RE = re.compile(r"""
+    \|              # começa com um pipe literal "|"
+    ([^|\[]+)       # captura um ou mais caracteres que nao seja "|" nem "["
+    \[              # abre colchete "["
+    (\d+)           # captura um número (um ou mais dígitos)
+    \]              # fecha colchete "]"
+    """, re.VERBOSE)
+
+# Regex para a linha de resumo das reviews, ex: "reviews: total: 8 downloaded: 8 avg rating: 4"
+REVIEW_SUMMARY_RE = re.compile(r"""
+    reviews:
+    \s+
+    total:\s+(?P<total>\d+)
+    \s+
+    downloaded:\s+(?P<downloaded>\d+)
+    \s+
+    avg\srating:\s+(?P<avg_rating>[0-9.]+)
+""", re.IGNORECASE | re.VERBOSE)
+
 
 def extract_all_categories(path):
     """
@@ -97,7 +114,9 @@ def parse_snap(path):
                 current_product = {
                     'id': int(line.split(':', 1)[1].strip()), 'asin': None, 'title': None,
                     'group': None, 'salesrank': None, 'similar': [],
-                    'categories': [], 'reviews': []
+                    'categories': [], 'reviews': [],
+                    'similar_count': 0, 'categories_count': 0,
+                    'total': 0, 'downloaded': 0, 'avg_rating': None
                 }
             elif current_product is None:
                 continue # Ignora linhas antes do primeiro produto
@@ -114,13 +133,24 @@ def parse_snap(path):
                 current_product['salesrank'] = int(value_str) if value_str.isdigit() else None
             elif line_lower.startswith('similar:'):
                 parts = line.split()
+                if len(parts) > 1 and parts[1].isdigit():
+                    current_product['similar_count'] = int(parts[1])
                 if len(parts) > 2:
                     current_product['similar'] = parts[2:]
             
             # Extrai as categorias
             elif '|' in line:
                 cats = _parse_category_line_to_list(line)
+                current_product['categories_count'] += len(cats)
                 current_product['categories'].extend(cats)
+            
+            elif line_lower.startswith('reviews: total:'):
+                match = REVIEW_SUMMARY_RE.search(line)
+                if match:
+                    summary = match.groupdict()
+                    current_product['total'] = int(summary['total'])
+                    current_product['downloaded'] = int(summary['downloaded'])
+                    current_product['avg_rating'] = float(summary['avg_rating'])
 
             # Se não for nenhum dos campos acima, tenta ver se é uma linha de avaliação
             else:
@@ -140,4 +170,3 @@ def parse_snap(path):
         # Devolve o último produto do ficheiro
         if current_product:
             yield current_product
-

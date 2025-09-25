@@ -11,39 +11,40 @@ DROP MATERIALIZED VIEW IF EXISTS ProductReviewSummary; -- Adicionado por seguran
 CREATE TABLE Categories (
     category_id SERIAL PRIMARY KEY,
     category_source_id INT UNIQUE,
-    category_name TEXT NOT NULL UNIQUE
+    category_name TEXT NOT NULL
 );
 
 -- Tabela que armazena explicitamente as relações de hierarquia
 CREATE TABLE Category_Hierarchy (
-    parent_category_id INT NOT NULL REFERENCES Categories(category_id),
-    child_category_id INT NOT NULL REFERENCES Categories(category_id),
+    parent_category_id INT REFERENCES Categories(category_id),
+    child_category_id INT REFERENCES Categories(category_id),
     PRIMARY KEY (parent_category_id, child_category_id),
     CHECK (parent_category_id <> child_category_id)
 );
 
 --tabela que guarda os produtos
 CREATE TABLE Products (
-    source_id INT UNIQUE,
+    source_id INT NOT NULL UNIQUE,
     asin VARCHAR(20) PRIMARY KEY,
     titulo TEXT NOT NULL,
-    group_name TEXT,
+    group_name TEXT NOT NULL,
     salesrank INT,
     total_reviews INT DEFAULT 0,
     qntd_downloads INT DEFAULT 0,
     average_rating DECIMAL (3, 2),
-    CHECK (average_rating >= 1 AND average_rating <= 5)
+    similar_products_count INT DEFAULT 0 NOT NULL,
+    categories_count INT DEFAULT 0 NOT NULL
 );
 
 --tabela que relaciona as reviews com os consumidores, os produtos e diz informações sobre essas reviews
 CREATE TABLE reviews (
     review_id      SERIAL PRIMARY KEY,
-    product_asin   VARCHAR(20) REFERENCES Products(asin),         
-    customer_id    VARCHAR(20),                
-    rating         SMALLINT,            
-    review_date    DATE,
-    votes          INT DEFAULT 0, 
-    helpful        INT DEFAULT 0,
+    product_asin   VARCHAR(20) NOT NULL REFERENCES Products(asin),         
+    customer_id    VARCHAR(20) NOT NULL,                
+    rating         SMALLINT NOT NULL,            
+    review_date    DATE NOT NULL,
+    votes          INT DEFAULT 0 NOT NULL, 
+    helpful        INT DEFAULT 0 NOT NULL,
     CHECK (rating >= 1 AND rating <= 5)
 );
 
@@ -58,7 +59,7 @@ CREATE TABLE Related_products (
 CREATE TABLE Product_category (
     product_asin VARCHAR(20) REFERENCES Products(asin),
     category_id INT REFERENCES Categories(category_id),
-    PRIMARY KEY (product_asin, category_id)
+    PRIMARY KEY (product_asin, category_id) --já torna os 2 em not null
 );
 
 

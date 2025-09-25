@@ -102,7 +102,22 @@ def insert_category_hierarchy(conn, categories_by_old_id, old_to_new_map):
 @log_time
 def process_products_and_reviews(conn, input_file, old_to_new_map): #processa produtos e suas avaliações
     cur = conn.cursor()
-    prod_sql = "INSERT INTO Products (source_id, asin, titulo, group_name, salesrank, total_reviews, average_rating, qntd_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (asin) DO UPDATE SET titulo = EXCLUDED.titulo, group_name = EXCLUDED.group_name, salesrank = EXCLUDED.salesrank, total_reviews = EXCLUDED.total_reviews, average_rating = EXCLUDED.average_rating"
+    prod_sql = """
+            INSERT INTO Products (
+                source_id, asin, titulo, group_name, salesrank, 
+                total_reviews, average_rating, qntd_downloads,
+                similar_products_count, categories_count
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+            ON CONFLICT (asin) DO UPDATE SET 
+                titulo = EXCLUDED.titulo, 
+                group_name = EXCLUDED.group_name, 
+                salesrank = EXCLUDED.salesrank, 
+                total_reviews = EXCLUDED.total_reviews, 
+                average_rating = EXCLUDED.average_rating,
+                qntd_downloads = EXCLUDED.qntd_downloads,
+                similar_products_count = EXCLUDED.similar_products_count,
+                categories_count = EXCLUDED.categories_count
+        """   
     prodcat_sql = "INSERT INTO Product_category (product_asin, category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING"
     reviews_sql = "INSERT INTO reviews (product_asin, customer_id, rating, review_date, votes, helpful) VALUES (%s,%s,%s,%s,%s,%s)"
     
@@ -130,6 +145,8 @@ def process_products_and_reviews(conn, input_file, old_to_new_map): #processa pr
         total_reviews = product.get('total', 0)
         downloaded_reviews = product.get('downloaded', 0)
         avg_rating = product.get('avg_rating', None)
+        similar_count = product.get('similar_count', 0)
+        categories_count = product.get('categories_count', 0)
 
         prod_batch.append((
             product['id'], 
@@ -139,7 +156,9 @@ def process_products_and_reviews(conn, input_file, old_to_new_map): #processa pr
             product['salesrank'],
             total_reviews,
             avg_rating,
-            downloaded_reviews
+            downloaded_reviews,
+            similar_count,
+            categories_count
         ))
 
         valid_product_count += 1
