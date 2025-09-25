@@ -1,7 +1,7 @@
 import sys
 import psycopg
 
-# A função agora ACEITA parâmetros
+# devovlve uma conexão com o banco de dados
 def get_conn(host, port, dbname, user, password):
     """
     Cria e retorna uma conexão com o banco de dados PostgreSQL

@@ -193,7 +193,7 @@ def query6(conn, output):
         # query principal
         select_sql = """
             WITH
-            -- Calcula os totais para produtos DIRETAMENTE em cada categoria.
+            -- calcula os totais para produtos DIRETAMENTE em cada categoria
             DirectCategoryTotals AS (
                 SELECT
                     pc.category_id,
@@ -206,7 +206,7 @@ def query6(conn, output):
                 GROUP BY
                     pc.category_id
             ),
-            -- Para cada categoria 'pai', calcula a soma dos totais de seus 'filhos' diretos.
+            -- para cada categoria pai, calcula a soma dos totais de seus filhos diretos
             ChildTotals AS (
                 SELECT
                     h.parent_category_id AS category_id,
@@ -219,7 +219,7 @@ def query6(conn, output):
                 GROUP BY
                     h.parent_category_id
             )
-            -- Combina os totais diretos com os totais dos filhos e calcula a média final.
+            -- Combina os totais diretos com os totais dos filhos e calcula a media final
             SELECT
                 cat.category_name,
                 ROUND(
