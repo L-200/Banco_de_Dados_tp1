@@ -11,12 +11,12 @@ BATCH_SIZE = 2000
 CATEGORY_BATCH = 500
 
 def log_time(func):
-    """Decorator que regista e imprime o tempo de execução de uma função."""
+ 
     def wrapper(*args, **kwargs):
         # usando 'func.__name__' para obter o nome da função original
         print(f"-> Iniciando etapa: '{func.__name__}'...")
         start_time = time.perf_counter()
-        result = func(*args, **kwargs) #aqui que a função original é de fato executada
+        result = func(*args, **kwargs) 
         end_time = time.perf_counter()
         total_time = end_time - start_time
         print(f"<- Etapa '{func.__name__}' concluída em {total_time:.4f} segundos.")
@@ -26,10 +26,10 @@ def log_time(func):
 @log_time
 def create_schema(conn, schema_filepath):
     """
-    Executa o ficheiro SQL para criar ou recriar as tabelas na base de dados.
+    executa o ficheiro SQL para criar ou recriar as tabelas na base de dados
     """
     print(f"A aplicar o esquema da base de dados a partir de: {schema_filepath}...")
-    try:
+    try: #se ocorrer algum erro, ele será capturado e o processo será revertido com rollback
         with open(schema_filepath, 'r', encoding='utf-8') as f:
             conn.cursor().execute(f.read())
         conn.commit()
@@ -41,26 +41,49 @@ def create_schema(conn, schema_filepath):
 
 @log_time
 def insert_categories(conn, categories_by_old_id):
-    # (O resto do código permanece exatamente o mesmo...)
+    """
+    Insere categorias usando o ID original e o nome, e retorna um mapa
+    do ID original para o novo ID sequencial do banco de dados
+    """
+    print(f"A inserir {len(categories_by_old_id)} categorias na base de dados...")
     cur = conn.cursor()
-    all_names = list(set(info['name'] for info in categories_by_old_id.values()))
-    sql = "INSERT INTO Categories (category_name) VALUES (%s) ON CONFLICT (category_name) DO NOTHING"
-    for i in range(0, len(all_names), CATEGORY_BATCH):
-        batch = [(name,) for name in all_names[i:i + CATEGORY_BATCH]]
-        cur.executemany(sql, batch)
-    conn.commit()
-    cur.execute("SELECT category_name, category_id FROM Categories")
-    name_to_new_id = {name: cat_id for name, cat_id in cur.fetchall()}
-    old_to_new_id_map = {
-        old_id: name_to_new_id.get(info['name'])
+    
+    # prepara os dados para inserção em lote
+    # cada item será uma tupla (category_source_id, category_name)
+    category_data = [
+        (old_id, info['name'])
         for old_id, info in categories_by_old_id.items()
+        if info.get('name') # garante que o nome da categoria não é nulo
+    ]
+
+    # usando ON CONFLICT no source_id, que deve ser o identificador único da fonte
+    sql = """
+        INSERT INTO Categories (category_source_id, category_name) 
+        VALUES (%s, %s) 
+        ON CONFLICT (category_source_id) DO NOTHING
+    """
+    
+    # executa a inserção em lotes
+    cur.executemany(sql, category_data)
+    conn.commit()
+    print("Inserção de categorias concluída.")
+
+    # cria o mapa consultando a tabela para obter os IDs gerados
+    print("A mapear IDs de categorias antigos para novos...")
+    cur.execute("SELECT category_source_id, category_id FROM Categories")
+    
+    # cria um dicionario mapeando o ID antigo (da fonte) para o novo ID (do BD)
+    old_to_new_id_map = {
+        source_id: new_id for source_id, new_id in cur.fetchall()
     }
+    
     cur.close()
+    print("Mapeamento concluído.")
     return old_to_new_id_map
 
 @log_time
 def insert_category_hierarchy(conn, categories_by_old_id, old_to_new_map):
-    # (O resto do código permanece exatamente o mesmo...)
+    #insere relações hierárquicas entre as categorias no banco de dados, usando o mapeamento de IDs
     hierarchy_pairs = []
     for old_id, info in categories_by_old_id.items():
         parent_old_id = info.get('parent_old_id')
@@ -77,45 +100,67 @@ def insert_category_hierarchy(conn, categories_by_old_id, old_to_new_map):
         cur.close()
 
 @log_time
-def process_products_and_reviews(conn, input_file, old_to_new_map):
+def process_products_and_reviews(conn, input_file, old_to_new_map): #processa produtos e suas avaliações
     cur = conn.cursor()
     prod_sql = "INSERT INTO Products (source_id, asin, titulo, group_name, salesrank, total_reviews, average_rating, qntd_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (asin) DO UPDATE SET titulo = EXCLUDED.titulo, group_name = EXCLUDED.group_name, salesrank = EXCLUDED.salesrank, total_reviews = EXCLUDED.total_reviews, average_rating = EXCLUDED.average_rating"
     prodcat_sql = "INSERT INTO Product_category (product_asin, category_id) VALUES (%s, %s) ON CONFLICT DO NOTHING"
     reviews_sql = "INSERT INTO reviews (product_asin, customer_id, rating, review_date, votes, helpful) VALUES (%s,%s,%s,%s,%s,%s)"
+    
     all_valid_asins = set()
     all_potential_related_pairs = []
     valid_product_count = 0
     prod_batch, review_batch, prodcat_batch = [], [], []
-    def flush_batches():
+
+    def flush_batches(): #realiza a inserção em lote no banco de dados para evitar múltiplas inserções pequenas
         nonlocal prod_batch, review_batch, prodcat_batch
         if prod_batch: cur.executemany(prod_sql, prod_batch)
         if prodcat_batch: cur.executemany(prodcat_sql, prodcat_batch)
         if review_batch: cur.executemany(reviews_sql, review_batch)
         conn.commit()
         prod_batch, review_batch, prodcat_batch = [], [], []
+
     for product in parse_snap(input_file):
         asin = product.get('asin')
         titulo = product.get('title')
         if not asin or not titulo:
             continue
+        
         all_valid_asins.add(asin)
-        total_reviews = len(product['reviews'])
-        avg_rating = round(sum(r['rating'] for r in product['reviews']) / total_reviews, 2) if total_reviews > 0 else None
-        prod_batch.append((product['id'], asin, titulo, product['group'], product['salesrank'], total_reviews, avg_rating, 0))
+        
+        total_reviews = product.get('total', 0)
+        downloaded_reviews = product.get('downloaded', 0)
+        avg_rating = product.get('avg_rating', None)
+
+        prod_batch.append((
+            product['id'], 
+            asin, 
+            titulo, 
+            product['group'], 
+            product['salesrank'],
+            total_reviews,
+            avg_rating,
+            downloaded_reviews
+        ))
+
         valid_product_count += 1
+        
         for cat in product['categories']:
             new_cat_id = old_to_new_map.get(cat['old_id'])
             if new_cat_id:
                 prodcat_batch.append((asin, new_cat_id))
+        
         for sim in product['similar']:
             if sim and sim != asin:
                 all_potential_related_pairs.append(tuple(sorted((asin, sim))))
+        
         for r in product['reviews']:
             review_batch.append((asin, r['customer'], r['rating'], r['date'], r['votes'], r['helpful']))
+        
         if valid_product_count > 0 and valid_product_count % BATCH_SIZE == 0:
             flush_batches()
             print(f"{valid_product_count} produtos válidos processados...")
-    flush_batches()
+    
+    flush_batches() 
     cur.close()
     print(f"Processamento de produtos finalizado. Total de produtos válidos: {valid_product_count}")
     return all_valid_asins, all_potential_related_pairs
@@ -127,7 +172,7 @@ def insert_filtered_related_products(conn, valid_asins, potential_pairs):
     for p1, p2 in potential_pairs:
         if p1 in valid_asins and p2 in valid_asins:
             valid_pairs.add((p1, p2))
-    if not valid_pairs:
+    if not valid_pairs: # se não houver pares válidos para inserção, exibe uma mensagem informando que nenhum par válido foi encontrado
         print("Nenhuma relação válida entre produtos encontrada.")
         return
     print(f"Encontradas {len(valid_pairs)} relações válidas. A inserir na base de dados...")
