@@ -63,15 +63,6 @@ CREATE TABLE Product_category (
 );
 
 
--- Resumo de reviews por produto (evita recalcular sempre)
-CREATE MATERIALIZED VIEW ProductReviewSummary AS
-SELECT
-    product_asin,
-    SUM(helpful) AS total_helpful,
-    COUNT(*) AS total_reviews
-FROM Reviews
-GROUP BY product_asin;
-
 -- Índices para joins e recursão
 CREATE INDEX idx_reviews_product_asin
     ON Reviews(product_asin);

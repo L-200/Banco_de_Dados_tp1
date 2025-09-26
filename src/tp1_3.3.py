@@ -76,6 +76,8 @@ def get_product_asin(conn, identifier, identifier_type):
 @log_time
 def query1(conn, product_asin, output):
 
+    # dado um produto, lista os 5 comentários mais úteis e com maior avaliação
+    # e os 5 comentários mais úteis e com menor avaliação.
     with conn.cursor() as cur:
         sql_top = """
         SELECT rating, helpful, votes, customer_id, review_date
@@ -85,7 +87,11 @@ def query1(conn, product_asin, output):
         """
         cur.execute(sql_top, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com maior avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_pos_{product_asin}.csv")
-        sql_bottom = "SELECT rating, helpful, votes, customer_id, review_date FROM reviews WHERE product_asin = %s ORDER BY helpful DESC, rating ASC LIMIT 5;"
+        
+        sql_bottom = """SELECT rating, helpful, votes, customer_id, review_date 
+        FROM reviews 
+        WHERE product_asin = %s 
+        ORDER BY helpful DESC, rating ASC LIMIT 5;"""
         cur.execute(sql_bottom, (product_asin,))
         print_results(cur, f"Query 1: Top 5 comentários úteis e com menor avaliação (ASIN: {product_asin})",output, f"q1_top5_reviews_neg_{product_asin}.csv")
 
@@ -159,50 +165,44 @@ def query4(conn, output):
 
 @log_time
 def query5(conn, output):
-    #lista os 10 produtos com a maior média de avaliações úteis positivas.
-
+    # lista os 10 produtos com a maior média de avaliações úteis positivas,
+    # considerando avaliações com rating >= 3.
     with conn.cursor() as cur:
         sql = """
             SELECT
                 p.asin,
                 p.titulo,
                 ROUND(AVG(r.helpful), 2) AS media_avaliacoes_uteis,
-                COUNT(r.review_id) AS total_avaliacoes
+                COUNT(r.review_id) AS total_avaliacoes_positivas
             FROM Products p
             JOIN reviews r ON p.asin = r.product_asin
+            WHERE r.rating >= 3  -- apenas avaliações com nota 3 ou superior
             GROUP BY p.asin, p.titulo
             HAVING COUNT(r.review_id) > 0
             ORDER BY media_avaliacoes_uteis DESC
             LIMIT 10;
         """
         cur.execute(sql)
-        print_results(cur, "Query 5: Top 10 produtos com maior média de avaliações úteis positivas", output, "q5_top10_produtos_maior_media_avaliacoes_uteis.csv")
+        print_results(cur, "Query 5: Top 10 produtos com maior média de avaliações úteis (rating >= 3)", output, "q5_top10_produtos_maior_media_avaliacoes_uteis.csv")
 
 @log_time
 def query6(conn, output):
-    # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando a hierarquia (pai-filho).
+    # lista as 5 categorias com a maior média de avaliações úteis positivas, considerando avaliações com rating >= 3
 
     with conn.cursor() as cur:
-        
-        # atualiza a visão materializada antes de executar a consulta para evitar erro
-        print("Atualizando a visão materializada (ProductReviewSummary)...")
-        refresh_sql = "REFRESH MATERIALIZED VIEW ProductReviewSummary;"
-        cur.execute(refresh_sql)
-        print("Visão atualizada com sucesso.")
-
-        # query principal
         select_sql = """
             WITH
-            -- calcula os totais para produtos DIRETAMENTE em cada categoria
             DirectCategoryTotals AS (
                 SELECT
                     pc.category_id,
-                    SUM(prs.total_helpful) AS total_helpful,
-                    SUM(prs.total_reviews) AS total_reviews
+                    SUM(r.helpful) AS total_helpful,
+                    COUNT(r.review_id) AS total_reviews
                 FROM
                     Product_category pc
                 JOIN
-                    ProductReviewSummary prs ON pc.product_asin = prs.product_asin
+                    reviews r ON pc.product_asin = r.product_asin
+                WHERE
+                    r.rating >= 3  -- ADICIONADO: Filtra apenas avaliações com nota 3 ou superior
                 GROUP BY
                     pc.category_id
             ),
@@ -240,8 +240,8 @@ def query6(conn, output):
             LIMIT 5;
         """
         cur.execute(select_sql)
-        print_results(cur, "Query 6: Top 5 categorias com maior média de avaliações úteis positivas", output, "q6_top5_categorias_maior_media_avaliacoes_uteis.csv")
-        
+        print_results(cur, "Query 6: Top 5 categorias com maior média de avaliações úteis (rating >= 3)", output, "q6_top5_categorias_maior_media_avaliacoes_uteis.csv")
+
 @log_time
 def query7(conn, output):
     # lista os 10 clientes que mais fizeram comentários por grupo de produto.
