@@ -1,5 +1,5 @@
 # Sobre este trabalho:
-Este projeto implementa ETL (Extração, Transformação e Carga) para processar um conjunto de dados de dados de produtos da Amazon. Os dados são lidos de um arquivo de texto, processados e carregados em um banco de dados PostgreSQL com um esquema projetado pela técnica bottom-up e depois normalizado (3FN). Após isso são feitas queries para se obter diversos dados interessantes sobre esse conjunto de dados.
+Este projeto implementa ETL (Extração, Transformação e Carga) para processar um conjunto de dados de dados de produtos da Amazon. Os dados são lidos de um arquivo de texto, processados e carregados em um banco de dados PostgreSQL com um esquema projetado pela técnica bottom-up e depois normalizado (4FN). Após isso são feitas queries para se obter diversos dados interessantes sobre esse conjunto de dados.
 
 Utiliza Docker e Docker-compose para facilitar a reprodutibilidade de sua execução.
 
